@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fantasy Auction</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container" id="main-container">
+        <!-- Starting Page -->
+        <div class="row justify-content-center" id="start-page">
+            <div class="col-md-6 text-center">
+                <h1 class="mb-4">Fantasy Player Auction</h1>
+                <div class="card">
+                    <div class="card-body">
+                        <button class="btn btn-primary btn-lg mb-3" id="create-room-btn">Create Auction Room</button>
+                        <button class="btn btn-success btn-lg" id="join-room-btn">Join Auction Room</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Room Form -->
+        <div class="row justify-content-center d-none" id="create-room-form">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h3>Create New Auction Room</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="create-form">
+                            <div class="mb-3">
+                                <label for="player-list" class="form-label">Upload Players List (Excel)</label>
+                                <input class="form-control" type="file" id="player-list" accept=".xlsx,.xls,.csv" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="starting-tokens" class="form-label">Max Bidding Amount for Each Team</label>
+                                <input type="number" class="form-control" id="starting-tokens" value="1000" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="bidding-time" class="form-label">Bidding Time per Player (seconds)</label>
+                                <input type="number" class="form-control" id="bidding-time" value="30" required>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">Create Room</button>
+                                <button type="button" class="btn btn-secondary" id="cancel-create">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Join Room Form -->
+        <div class="row justify-content-center d-none" id="join-room-form">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h3>Join Auction Room</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="join-form">
+                            <div class="mb-3">
+                                <label for="room-code" class="form-label">Room Code</label>
+                                <input type="text" class="form-control" id="room-code" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="team-name" class="form-label">Your Team Name</label>
+                                <input type="text" class="form-control" id="team-name" required>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-success">Join Room</button>
+                                <button type="button" class="btn btn-secondary" id="cancel-join">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Host Room Display -->
+        <div class="d-none" id="host-room">
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <h3 class="mb-0">Auction Room: <span id="host-room-code"></span></h3>
+                            <div id="teams-count-badge" class="badge bg-light text-dark">0 Teams Joined</div>
+                        </div>
+                        <div class="card-body">
+                            <div id="host-controls">
+                                <div class="alert alert-info" id="host-message">
+                                    Waiting for teams to join... Share room code: <strong id="share-room-code"></strong>
+                                </div>
+                                <button class="btn btn-success" id="start-auction-btn">Start Auction</button>
+                            </div>
+
+                            <div class="auction-container mt-4 d-none" id="host-auction-area">
+                                <div class="player-display">
+                                    <h4 class="text-center">Current Player</h4>
+                                    <div class="text-center" id="host-current-player">
+                                        <p>No player selected yet</p>
+                                    </div>
+                                    <div class="bid-timer" id="host-bid-timer">--</div>
+                                    <div class="current-bid" id="host-current-bid">No bids yet</div>
+                                    <div class="bid-history" id="host-bid-history"></div>
+                                    <div class="text-center mt-3">
+                                        <button class="btn btn-primary" id="next-player-btn">Next Player</button>
+                                    </div>
+                                </div>
+                                
+                                <div class="teams-display">
+                                    <h4>Teams Joined</h4>
+                                    <div id="host-teams-list"></div>
+                                </div>
+                            </div>
+
+                            <!-- Host Results Section -->
+                            <div class="auction-results d-none" id="host-results">
+                                <h3 class="text-center mb-4">Auction Results</h3>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-striped">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>S.No</th>
+                                                <th>Team Name</th>
+                                                <th>Team Members</th>
+                                                <th>Remaining Tokens</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="host-results-body">
+                                            <!-- Results will be populated here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Team Room Display -->
+        <div class="d-none" id="team-room">
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h3>Team: <span id="team-name-display"></span> | Tokens: <span id="team-tokens-display"></span></h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="team-waiting" class="alert alert-info">
+                                Waiting for auction to start...
+                            </div>
+
+                            <div class="auction-container d-none" id="team-auction-area">
+                                <div class="player-display">
+                                    <h4 class="text-center">Current Player</h4>
+                                    <div class="text-center" id="team-current-player">
+                                        <p>No player selected yet</p>
+                                    </div>
+                                    <div class="bid-timer" id="team-bid-timer">--</div>
+                                    <div class="current-bid" id="team-current-bid">No bids yet</div>
+                                    <div class="bid-controls">
+                                        <input type="number" class="form-control" id="bid-amount" placeholder="Enter bid amount">
+                                        <button class="btn btn-primary" id="place-bid-btn">Place Bid</button>
+                                    </div>
+                                    <div class="bid-history" id="team-bid-history"></div>
+                                </div>
+                                
+                                <div class="teams-display">
+                                    <h4>Your Team</h4>
+                                    <div id="team-roster"></div>
+                                </div>
+                            </div>
+
+                            <!-- Team Results Section -->
+                            <div class="auction-results d-none" id="team-results">
+                                <h3 class="text-center mb-4">Auction Results</h3>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-striped">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>S.No</th>
+                                                <th>Team Name</th>
+                                                <th>Team Members</th>
+                                                <th>Remaining Tokens</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="team-results-body">
+                                            <!-- Results will be populated here -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAU9F5pBZY2Q91FCYp6PIpGTkP0B5nAKnU",
+            authDomain: "auction-app-4fc70.firebaseapp.com",
+            databaseURL: "https://auction-app-4fc70-default-rtdb.firebaseio.com",
+            projectId: "auction-app-4fc70",
+            storageBucket: "auction-app-4fc70.firebasestorage.app",
+            messagingSenderId: "314340623382",
+            appId: "1:314340623382:web:6342f51bfe8a658d4fe137"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        // Make Firebase available globally
+        window.firebase = { db, ref, set, onValue, update, push };
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
