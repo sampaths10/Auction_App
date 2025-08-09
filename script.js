@@ -186,6 +186,7 @@ function initApp() {
       currentBid: 0,
       currentBidder: null,
       timer: null,
+      timerPaused: false,
       bidHistory: {},
       auctionStarted: false,
       auctionEnded: false,
@@ -206,6 +207,9 @@ function initApp() {
       // Set up event listeners
       document.getElementById('start-auction-btn').addEventListener('click', () => startAuction(roomCode));
       document.getElementById('next-player-btn').addEventListener('click', () => nextPlayer(roomCode));
+      document.getElementById('pause-timer-btn').addEventListener('click', () => toggleTimerPause(roomCode));
+      document.getElementById('share-room-btn').addEventListener('click', shareRoomCode);
+      document.getElementById('copy-room-code').addEventListener('click', copyRoomCode);
       
       // Start listening for changes
       listenForRoomUpdates(roomCode);
@@ -214,6 +218,31 @@ function initApp() {
       alert("Failed to create room. Please try again.");
       showStartPage();
     }
+  }
+
+  function shareRoomCode() {
+    const roomCode = document.getElementById('share-room-code').textContent;
+    if (navigator.share) {
+      navigator.share({
+        title: 'Join my Fantasy Auction Room',
+        text: `Use this code to join my auction room: ${roomCode}`,
+        url: window.location.href
+      }).catch(err => {
+        console.error('Error sharing:', err);
+        copyRoomCode();
+      });
+    } else {
+      copyRoomCode();
+    }
+  }
+
+  function copyRoomCode() {
+    const roomCode = document.getElementById('share-room-code').textContent;
+    navigator.clipboard.writeText(roomCode).then(() => {
+      alert(`Room code ${roomCode} copied to clipboard!`);
+    }).catch(err => {
+      console.error('Could not copy text: ', err);
+    });
   }
 
   async function joinRoom(roomCode, teamName) {
@@ -246,6 +275,7 @@ function initApp() {
             currentBid: 0,
             currentBidder: null,
             timer: null,
+            timerPaused: false,
             bidHistory: {},
             auctionStarted: false,
             auctionEnded: false
@@ -295,6 +325,16 @@ function initApp() {
       if (roomData.currentPlayer && roomData.timer !== null) {
         remainingTime = roomData.timer;
         updateTimerDisplay(roomCode);
+        
+        // Update pause/resume button state
+        if (isHost) {
+          const pauseBtn = document.getElementById('pause-timer-btn');
+          if (pauseBtn) {
+            pauseBtn.innerHTML = roomData.timerPaused ? 
+              '<i class="fas fa-play"></i> Resume' : 
+              '<i class="fas fa-pause"></i> Pause';
+          }
+        }
       }
       
       if (isHost) {
@@ -311,6 +351,11 @@ function initApp() {
         };
         firebaseTools.update(roomRef, updates);
         showAuctionResults(roomCode, roomData);
+      }
+      
+      // Always show results table for host
+      if (isHost && roomData.teams) {
+        updateResultsTable(roomData);
       }
     });
   }
@@ -352,7 +397,8 @@ function initApp() {
           currentPlayer: null,
           currentBid: 0,
           currentBidder: null,
-          timer: null
+          timer: null,
+          timerPaused: false
         });
         
         showAuctionResults(roomCode, roomData);
@@ -376,7 +422,8 @@ function initApp() {
         currentBid: 0,
         currentBidder: null,
         bidHistory: {},
-        timer: roomData.biddingTime
+        timer: roomData.biddingTime,
+        timerPaused: false
       });
       
       // Start bid timer with configured time
@@ -396,7 +443,8 @@ function initApp() {
           currentPlayer: null,
           currentBid: 0,
           currentBidder: null,
-          timer: null
+          timer: null,
+          timerPaused: false
         });
         showAuctionResults(roomCode);
       }
@@ -411,26 +459,46 @@ function initApp() {
     const roomRef = firebaseTools.ref(db, `auctions/${roomCode}`);
     
     // Initial timer update
-    firebaseTools.update(roomRef, { timer: remainingTime });
+    firebaseTools.update(roomRef, { 
+      timer: remainingTime,
+      timerPaused: false 
+    });
     updateTimerDisplay(roomCode);
     
     timerInterval = setInterval(async () => {
-      remainingTime--;
+      const snapshot = await firebaseTools.get(roomRef);
+      const roomData = snapshot.val();
       
-      try {
-        // Update timer in Firebase
-        await firebaseTools.update(roomRef, { timer: remainingTime });
-        updateTimerDisplay(roomCode);
+      if (!roomData.timerPaused) {
+        remainingTime--;
         
-        if (remainingTime <= 0) {
+        try {
+          // Update timer in Firebase
+          await firebaseTools.update(roomRef, { timer: remainingTime });
+          updateTimerDisplay(roomCode);
+          
+          if (remainingTime <= 0) {
+            clearInterval(timerInterval);
+            await finalizePlayer(roomCode);
+          }
+        } catch (error) {
+          console.error("Timer update error:", error);
           clearInterval(timerInterval);
-          await finalizePlayer(roomCode);
         }
-      } catch (error) {
-        console.error("Timer update error:", error);
-        clearInterval(timerInterval);
       }
     }, 1000);
+  }
+
+  async function toggleTimerPause(roomCode) {
+    const roomRef = firebaseTools.ref(db, `auctions/${roomCode}`);
+    const snapshot = await firebaseTools.get(roomRef);
+    const roomData = snapshot.val();
+    
+    if (!roomData) return;
+    
+    await firebaseTools.update(roomRef, {
+      timerPaused: !roomData.timerPaused
+    });
   }
 
   function updateTimerDisplay(roomCode) {
@@ -442,46 +510,37 @@ function initApp() {
   }
 
   async function placeBid(roomCode, teamName) {
-    const bidAmount = parseInt(document.getElementById('bid-amount').value);
     const roomRef = firebaseTools.ref(db, `auctions/${roomCode}`);
-    
-    if (!bidAmount || isNaN(bidAmount)) {
-      alert('Please enter a valid bid amount');
-      return;
-    }
     
     try {
       const snapshot = await firebaseTools.get(roomRef);
       const roomData = snapshot.val();
       if (!roomData) return;
       
-      // Validate bid
-      if (bidAmount <= roomData.currentBid) {
-        throw new Error(`Bid must be higher than current bid (${roomData.currentBid})`);
-      }
-      
+      // Calculate new bid amount (current bid + 1)
+      const newBidAmount = (roomData.currentBid || 0) + 1;
       const teamTokens = roomData.teams?.[teamName]?.tokens || roomData.startingTokens;
-      if (bidAmount > teamTokens) {
+      
+      if (newBidAmount > teamTokens) {
         throw new Error('Not enough tokens for this bid');
       }
       
       // Create new bid history entry
       const newBid = {
         team: teamName,
-        amount: bidAmount,
+        amount: newBidAmount,
         time: new Date().toLocaleTimeString()
       };
       
       // Update current bid and add to history
       await Promise.all([
         firebaseTools.update(roomRef, {
-          currentBid: bidAmount,
+          currentBid: newBidAmount,
           currentBidder: teamName
         }),
         firebaseTools.push(firebaseTools.ref(db, `auctions/${roomCode}/bidHistory`), newBid)
       ]);
       
-      document.getElementById('bid-amount').value = '';
     } catch (error) {
       console.error("Error placing bid:", error);
       alert(error.message);
@@ -507,7 +566,8 @@ function initApp() {
         currentPlayer: null,
         currentBid: 0,
         currentBidder: null,
-        timer: null
+        timer: null,
+        timerPaused: false
       });
       
       // Move to next player
@@ -531,7 +591,6 @@ function initApp() {
     // Hide auction area and show results
     if (isHost) {
       document.getElementById('host-auction-area').classList.add('d-none');
-      document.getElementById('host-results').classList.remove('d-none');
     } else {
       document.getElementById('team-auction-area').classList.add('d-none');
       document.getElementById('team-results').classList.remove('d-none');
@@ -606,14 +665,9 @@ function initApp() {
     // Update current player display
     const currentPlayerDisplay = document.getElementById('host-current-player');
     if (roomData.currentPlayer) {
-      const playerImage = roomData.currentPlayer.PhotoURL ? 
-        `<img src="${roomData.currentPlayer.PhotoURL}" alt="${roomData.currentPlayer.Name}" class="player-image">` :
-        `<div class="player-image-placeholder">${(roomData.currentPlayer.Name || 'P').charAt(0)}</div>`;
-      
       currentPlayerDisplay.innerHTML = `
-        ${playerImage}
         <h5>${roomData.currentPlayer.Name || 'Unknown Player'}</h5>
-        <p>${roomData.currentPlayer.Position || 'All-rounder'} | Base Price: ${roomData.currentPlayer.BasePrice || '100'}</p>
+        <p>${roomData.currentPlayer.Position || 'All-rounder'}</p>
       `;
       
       document.getElementById('host-current-bid').textContent = 
@@ -638,6 +692,35 @@ function initApp() {
     } else {
       currentPlayerDisplay.innerHTML = '<p>No player selected yet</p>';
     }
+    
+    // Update results table
+    updateResultsTable(roomData);
+  }
+
+  function updateResultsTable(roomData) {
+    const resultsBody = document.getElementById('host-results-body');
+    if (!resultsBody) return;
+    
+    let sno = 1;
+    resultsBody.innerHTML = Object.entries(roomData.teams || {}).map(([teamName, team]) => {
+      const playersList = (team.players || []).map(player => {
+        const posClass = getPositionClass(player?.Position);
+        return `
+          <span class="player-badge ${posClass}">
+            ${player?.Name || 'Unknown'} (${player?.Position || 'All'})
+          </span>
+        `;
+      }).join('');
+      
+      return `
+        <tr>
+          <td>${sno++}</td>
+          <td><strong>${teamName}</strong></td>
+          <td>${playersList || 'No players'}</td>
+          <td>${team.tokens || 0}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function updateTeamDisplay(roomCode, teamName, roomData) {
@@ -661,14 +744,9 @@ function initApp() {
     // Update current player display
     const currentPlayerDisplay = document.getElementById('team-current-player');
     if (roomData.currentPlayer) {
-      const playerImage = roomData.currentPlayer.PhotoURL ? 
-        `<img src="${roomData.currentPlayer.PhotoURL}" alt="${roomData.currentPlayer.Name}" class="player-image">` :
-        `<div class="player-image-placeholder">${(roomData.currentPlayer.Name || 'P').charAt(0)}</div>`;
-      
       currentPlayerDisplay.innerHTML = `
-        ${playerImage}
         <h5>${roomData.currentPlayer.Name || 'Unknown Player'}</h5>
-        <p>${roomData.currentPlayer.Position || 'All-rounder'} | Base Price: ${roomData.currentPlayer.BasePrice || '100'}</p>
+        <p>${roomData.currentPlayer.Position || 'All-rounder'}</p>
       `;
       
       document.getElementById('team-current-bid').textContent = 
